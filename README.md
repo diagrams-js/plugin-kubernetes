@@ -158,7 +158,7 @@ const diagram = Diagram("My K8s Application");
 // Create plugin with custom resource mappings
 const plugin = createKubernetesPlugin({
   defaultNamespace: "production",
-  resourceMappings: {
+  imageMappings: {
     // 1. Provider icon mapping - use built-in provider icons
     "my-custom-deployment": {
       provider: "onprem",
@@ -188,20 +188,20 @@ const plugin = createKubernetesPlugin({
 await diagram.registerPlugins([plugin]);
 ```
 
-### `ResourceMappings` Type
+### `ImageMappings` Type
 
 Exported TypeScript type for defining resource mappings with full type safety:
 
 ```typescript
-import { createKubernetesPlugin, ResourceMappings } from "@diagrams-js/plugin-kubernetes";
+import { createKubernetesPlugin, ImageMappings } from "@diagrams-js/plugin-kubernetes";
 
-const mappings: ResourceMappings = {
+const mappings: ImageMappings = {
   "my-deployment": { provider: "k8s", type: "compute", resource: "Deploy" },
   "my-app": { iconify: "logos:kubernetes" },
   "custom-resource": "https://example.com/icon.svg",
 };
 
-const plugin = createKubernetesPlugin({ resourceMappings: mappings });
+const plugin = createKubernetesPlugin({ imageMappings: mappings });
 ```
 
 ## Iconify Icons
@@ -624,7 +624,7 @@ The plugin maps common Kubernetes resources to provider icons automatically. For
 
 ```typescript
 const plugin = createKubernetesPlugin({
-  resourceMappings: {
+  imageMappings: {
     // Option 1: Use a provider icon
     "my-deployment": { provider: "k8s", type: "compute", resource: "Deploy" },
 
@@ -693,7 +693,7 @@ import { createKubernetesPlugin } from "@diagrams-js/plugin-kubernetes";
 // ✅ Create plugin with custom configuration
 const customPlugin = createKubernetesPlugin({
   defaultNamespace: "production",
-  resourceMappings: {
+  imageMappings: {
     "custom-app": { iconify: "logos:kubernetes" },
   },
 });
@@ -705,7 +705,7 @@ await diagram.registerPlugins([customPlugin]);
 
 - `config` (optional): `KubernetesPluginConfig`
   - `defaultNamespace`: Default namespace for exports (default: "default")
-  - `resourceMappings`: Custom resource to icon mappings (see [Configuration](#configuration) section)
+  - `ImageMappings`: Custom resource to icon mappings (see [Configuration](#configuration) section)
 
 **Returns:** `DiagramsPlugin` - The plugin instance
 
@@ -714,7 +714,7 @@ await diagram.registerPlugins([customPlugin]);
 ```typescript
 const plugin = createKubernetesPlugin({
   defaultNamespace: "production",
-  resourceMappings: {
+  imageMappings: {
     // Provider icons - use built-in diagrams-js icons
     "my-deployment": { provider: "k8s", type: "compute", resource: "Deploy" },
     "my-db": { provider: "k8s", type: "storage", resource: "Sts" },

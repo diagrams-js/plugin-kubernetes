@@ -153,6 +153,61 @@ spec:
       const json = diagram.toJSON();
       expect(json.edges).toBeDefined();
       expect(json.edges!.length).toBeGreaterThan(0);
+      // Verify the edge connects service to deployment
+      const serviceToDeploymentEdge = json.edges!.find(
+        (e) => e.from === "app-service" && e.to === "app-deployment",
+      );
+      expect(serviceToDeploymentEdge).toBeDefined();
+    });
+
+    it("should create edge for Service selector with namespace", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: production
+spec:
+  selector:
+    app: api
+  ports:
+  - port: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  namespace: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: nginx:latest
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Should have edges: Deployment->pod0, Deployment->pod1, Service->Deployment
+      expect(json.edges).toBeDefined();
+      expect(json.edges!.length).toBeGreaterThanOrEqual(3);
+
+      // Check for service to deployment edge
+      const serviceToDeploymentEdge = json.edges!.find(
+        (e) => e.from === "production/api-service" && e.to === "production/api-deployment",
+      );
+      expect(serviceToDeploymentEdge).toBeDefined();
     });
 
     it("should preserve Kubernetes metadata", async () => {
@@ -306,10 +361,10 @@ spec:
       expect(serviceNode?.metadata?.kubernetes?.kind).toBe("Service");
     });
 
-    it("should use custom resource mappings when configured", async () => {
+    it("should use custom image mappings when configured", async () => {
       const diagram = Diagram("Test");
       const customPlugin = createKubernetesPlugin({
-        resourceMappings: {
+        imageMappings: {
           "my-custom-app": {
             provider: "onprem",
             type: "compute",
@@ -338,10 +393,10 @@ spec:
       expect(customNode?.provider).toBe("onprem");
     });
 
-    it("should support custom image URLs in resourceMappings", async () => {
+    it("should support custom image URLs in imageMappings", async () => {
       const diagram = Diagram("Test");
       const customPlugin = createKubernetesPlugin({
-        resourceMappings: {
+        imageMappings: {
           "my-service": "https://example.com/icon.png",
         },
       });
@@ -365,10 +420,10 @@ spec:
       expect(serviceNode?.id).toBe("my-service");
     });
 
-    it("should support Iconify icons in resourceMappings", async () => {
+    it("should support Iconify icons in imageMappings", async () => {
       const diagram = Diagram("Test");
       const customPlugin = createKubernetesPlugin({
-        resourceMappings: {
+        imageMappings: {
           "k8s-app": { iconify: "logos:kubernetes" },
         },
       });
@@ -726,6 +781,570 @@ spec:
       const app2 = json2.nodes.find((n) => n.metadata?.kubernetes?.kind === "Deployment");
       expect(app2?.metadata?.kubernetes?.kind).toBe(app1?.metadata?.kubernetes?.kind);
       expect(app2?.metadata?.kubernetes?.namespace).toBe(app1?.metadata?.kubernetes?.namespace);
+    });
+  });
+
+  describe("Comprehensive Import Coverage", () => {
+    it("should handle all workload types with pod creation", async () => {
+      const diagram = Diagram("Workloads Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-deploy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+      - name: web
+        image: nginx:latest
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-stateful
+spec:
+  serviceName: db
+  replicas: 3
+  selector:
+    matchLabels:
+      app: db
+  template:
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: monitoring-ds
+spec:
+  selector:
+    matchLabels:
+      app: monitor
+  template:
+    spec:
+      containers:
+      - name: agent
+        image: prometheus:latest
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: cache-rs
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    spec:
+      containers:
+      - name: redis
+        image: redis:latest
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: backup
+        image: busybox:latest
+      restartPolicy: OnFailure
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Deployment (1 + 2 pods) + StatefulSet (1 + 3 pods) + DaemonSet (1 + 1 pod) + ReplicaSet (1 + 2 pods) + Job (1 + 1 pod)
+      expect(json.nodes.length).toBeGreaterThanOrEqual(14);
+
+      // Verify all main resources exist
+      expect(json.nodes.find((n) => n.id === "web-deploy")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "db-stateful")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "monitoring-ds")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "cache-rs")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "backup-job")).toBeDefined();
+
+      // Verify pod replicas
+      expect(json.nodes.find((n) => n.id === "web-deploy-pod-0")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "web-deploy-pod-1")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "db-stateful-pod-0")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "db-stateful-pod-2")).toBeDefined();
+    });
+
+    it("should handle all network resources", async () => {
+      const diagram = Diagram("Network Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+  - port: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+  - port: 80
+    nodePort: 30080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-lb
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+  - port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+  - Ingress
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      expect(json.nodes.find((n) => n.id === "web-service")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "web-nodeport")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "web-lb")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "web-ingress")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "allow-policy")).toBeDefined();
+    });
+
+    it("should handle all storage resources", async () => {
+      const diagram = Diagram("Storage Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  database.conf: |
+    host=localhost
+    port=5432
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+type: Opaque
+data:
+  password: c2VjcmV0
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-volume
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteOnce
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-storage
+provisioner: kubernetes.io/gce-pd
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      expect(json.nodes.find((n) => n.id === "app-config")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "app-secret")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "pv-volume")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "pvc-claim")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "fast-storage")).toBeDefined();
+    });
+
+    it("should handle all RBAC resources", async () => {
+      const diagram = Diagram("RBAC Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-role
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: app-sa
+roleRef:
+  kind: Role
+  name: app-role
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-reader-binding
+subjects:
+- kind: ServiceAccount
+  name: app-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: cluster-reader
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      expect(json.nodes.find((n) => n.id === "app-sa")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "app-role")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "app-rolebinding")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "cluster-reader")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "cluster-reader-binding")).toBeDefined();
+    });
+
+    it("should handle multi-namespace resources", async () => {
+      const diagram = Diagram("Multi-namespace Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+      - name: web
+        image: nginx:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+  namespace: production
+spec:
+  selector:
+    app: web
+  ports:
+  - port: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+      - name: web
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+  namespace: staging
+spec:
+  selector:
+    app: web
+  ports:
+  - port: 80
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Should have production and staging resources
+      expect(json.nodes.find((n) => n.id === "production/web")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "production/web-service")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "staging/web")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "staging/web-service")).toBeDefined();
+
+      // Should have separate clusters for each namespace
+      expect(json.clusters).toBeDefined();
+      expect(json.clusters!.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("should handle single replica (no suffix in label)", async () => {
+      const diagram = Diagram("Single Replica Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: singleton
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: single
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Single replica should have same label as deployment
+      const podNode = json.nodes.find((n) => n.id === "singleton-pod-0");
+      expect(podNode).toBeDefined();
+      expect(podNode?.label).toBe("singleton");
+    });
+
+    it("should handle resource without containers (no pod nodes)", async () => {
+      const diagram = Diagram("No Containers Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: Service
+metadata:
+  name: orphaned-service
+spec:
+  selector:
+    app: missing
+  ports:
+  - port: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: standalone-config
+data:
+  key: value
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Service and ConfigMap only, no pods
+      expect(json.nodes.length).toBe(2);
+      expect(json.nodes.find((n) => n.id === "orphaned-service")).toBeDefined();
+      expect(json.nodes.find((n) => n.id === "standalone-config")).toBeDefined();
+    });
+
+    it("should handle CronJob resources", async () => {
+      const diagram = Diagram("CronJob Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-cron
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: busybox:latest
+            command: ["sh", "-c", "echo Backup done"]
+          restartPolicy: OnFailure
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      expect(json.nodes.find((n) => n.id === "backup-cron")).toBeDefined();
+    });
+
+    it("should handle namespace resource", async () => {
+      const diagram = Diagram("Namespace Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: custom-namespace
+  labels:
+    env: production
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      const nsNode = json.nodes.find((n) => n.id === "custom-namespace");
+      expect(nsNode).toBeDefined();
+      expect(nsNode?.metadata?.kubernetes?.kind).toBe("Namespace");
+    });
+
+    it("should correctly map container images to provider icons", async () => {
+      const diagram = Diagram("Container Icons Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-container
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multi
+  template:
+    spec:
+      containers:
+      - name: web
+        image: nginx:latest
+      - name: db
+        image: postgres:15
+      - name: cache
+        image: redis:latest
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Should create pod node with first container's image
+      const podNode = json.nodes.find((n) => n.id === "multi-container-pod-0");
+      expect(podNode).toBeDefined();
+      expect(podNode?.metadata?.kubernetes?.image).toBe("nginx:latest");
+    });
+
+    it("should handle complex service selectors with multiple labels", async () => {
+      const diagram = Diagram("Complex Selector Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: complex-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+      tier: web
+      env: production
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: complex-service
+spec:
+  selector:
+    app: frontend
+    tier: web
+    env: production
+  ports:
+  - port: 80
+`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Service should connect to deployment only if all labels match
+      const serviceToDeploymentEdge = json.edges?.find(
+        (e) => e.from === "complex-service" && e.to === "complex-app",
+      );
+      expect(serviceToDeploymentEdge).toBeDefined();
     });
   });
 });

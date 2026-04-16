@@ -146,7 +146,7 @@ interface ResourceInfo {
 /**
  * Resource mapping types for Kubernetes plugin
  */
-export type ResourceMappings = Record<
+export type ImageMappings = Record<
   string,
   | { provider: string; type: string; resource: string }
   | { url: string }
@@ -249,12 +249,12 @@ function getProviderForImage(image: string): ResourceMappingResult {
  */
 function getProviderForKind(
   kind: string,
-  resourceMappings: ResourceMappings = {},
+  imageMappings: ImageMappings = {},
   resourceName?: string,
 ): ResourceMappingResult {
-  // Check custom resource mappings by resource name first
-  if (resourceName && resourceMappings[resourceName]) {
-    const customMapping = resourceMappings[resourceName];
+  // Check custom image mappings by resource name first
+  if (resourceName && imageMappings[resourceName]) {
+    const customMapping = imageMappings[resourceName];
     if (typeof customMapping === "string") {
       return { url: customMapping };
     }
@@ -268,8 +268,8 @@ function getProviderForKind(
     return customMapping;
   }
 
-  // Check custom resource mappings by kind
-  const customMapping = resourceMappings[kind];
+  // Check custom image mappings by kind
+  const customMapping = imageMappings[kind];
   if (customMapping) {
     if (typeof customMapping === "string") {
       return { url: customMapping };
@@ -284,31 +284,76 @@ function getProviderForKind(
     return customMapping;
   }
 
-  // Map built-in kinds to k8s provider resources
+  // Map built-in kinds to k8s provider resources based on k8s.mdx documentation
   const kindMappings: Record<string, { provider: string; type: string; resource: string }> = {
+    // k8s/compute
     Deployment: { provider: "k8s", type: "compute", resource: "Deploy" },
-    StatefulSet: { provider: "k8s", type: "compute", resource: "Sts" },
-    DaemonSet: { provider: "k8s", type: "compute", resource: "Ds" },
-    ReplicaSet: { provider: "k8s", type: "compute", resource: "Rs" },
+    StatefulSet: { provider: "k8s", type: "compute", resource: "STS" },
+    DaemonSet: { provider: "k8s", type: "compute", resource: "DS" },
+    ReplicaSet: { provider: "k8s", type: "compute", resource: "RS" },
     Pod: { provider: "k8s", type: "compute", resource: "Pod" },
-    Service: { provider: "k8s", type: "network", resource: "Svc" },
-    Ingress: { provider: "k8s", type: "network", resource: "Ing" },
-    ConfigMap: { provider: "k8s", type: "storage", resource: "Cm" },
-    Secret: { provider: "k8s", type: "storage", resource: "Secret" },
-    PersistentVolume: { provider: "k8s", type: "storage", resource: "Pv" },
-    PersistentVolumeClaim: { provider: "k8s", type: "storage", resource: "Pvc" },
-    StorageClass: { provider: "k8s", type: "storage", resource: "Sc" },
     Job: { provider: "k8s", type: "compute", resource: "Job" },
-    CronJob: { provider: "k8s", type: "compute", resource: "Cj" },
+    CronJob: { provider: "k8s", type: "compute", resource: "Cronjob" },
+
+    // k8s/network
+    Service: { provider: "k8s", type: "network", resource: "SVC" },
+    Ingress: { provider: "k8s", type: "network", resource: "Ing" },
+    NetworkPolicy: { provider: "k8s", type: "network", resource: "Netpol" },
+    Endpoint: { provider: "k8s", type: "network", resource: "Ep" },
+    Endpoints: { provider: "k8s", type: "network", resource: "Ep" },
+
+    // k8s/podconfig
+    ConfigMap: { provider: "k8s", type: "podconfig", resource: "CM" },
+    Secret: { provider: "k8s", type: "podconfig", resource: "Secret" },
+
+    // k8s/storage
+    PersistentVolume: { provider: "k8s", type: "storage", resource: "PV" },
+    PersistentVolumeClaim: { provider: "k8s", type: "storage", resource: "PVC" },
+    StorageClass: { provider: "k8s", type: "storage", resource: "SC" },
+    Volume: { provider: "k8s", type: "storage", resource: "Vol" },
+
+    // k8s/rbac
     Role: { provider: "k8s", type: "rbac", resource: "Role" },
-    RoleBinding: { provider: "k8s", type: "rbac", resource: "RoleBinding" },
-    ClusterRole: { provider: "k8s", type: "rbac", resource: "ClusterRole" },
-    ClusterRoleBinding: { provider: "k8s", type: "rbac", resource: "ClusterRoleBinding" },
-    ServiceAccount: { provider: "k8s", type: "rbac", resource: "Sa" },
-    Namespace: { provider: "k8s", type: "cluster", resource: "Ns" },
-    Node: { provider: "k8s", type: "cluster", resource: "Node" },
-    HorizontalPodAutoscaler: { provider: "k8s", type: "cluster", resource: "Hpa" },
-    NetworkPolicy: { provider: "k8s", type: "network", resource: "NetworkPolicy" },
+    RoleBinding: { provider: "k8s", type: "rbac", resource: "RB" },
+    ClusterRole: { provider: "k8s", type: "rbac", resource: "CRole" },
+    ClusterRoleBinding: { provider: "k8s", type: "rbac", resource: "CRB" },
+    ServiceAccount: { provider: "k8s", type: "rbac", resource: "SA" },
+    User: { provider: "k8s", type: "rbac", resource: "User" },
+    Group: { provider: "k8s", type: "rbac", resource: "Group" },
+
+    // k8s/group
+    Namespace: { provider: "k8s", type: "group", resource: "NS" },
+
+    // k8s/infra
+    Node: { provider: "k8s", type: "infra", resource: "Node" },
+    ETCD: { provider: "k8s", type: "infra", resource: "ETCD" },
+    Master: { provider: "k8s", type: "infra", resource: "Master" },
+
+    // k8s/clusterconfig
+    HorizontalPodAutoscaler: { provider: "k8s", type: "clusterconfig", resource: "HPA" },
+    ResourceQuota: { provider: "k8s", type: "clusterconfig", resource: "Quota" },
+    LimitRange: { provider: "k8s", type: "clusterconfig", resource: "Limits" },
+
+    // k8s/controlplane
+    APIServer: { provider: "k8s", type: "controlplane", resource: "API" },
+    ControllerManager: { provider: "k8s", type: "controlplane", resource: "CCM" },
+    Scheduler: { provider: "k8s", type: "controlplane", resource: "Sched" },
+    Kubelet: { provider: "k8s", type: "controlplane", resource: "Kubelet" },
+    KProxy: { provider: "k8s", type: "controlplane", resource: "KProxy" },
+
+    // k8s/chaos
+    ChaosMesh: { provider: "k8s", type: "chaos", resource: "ChaosMesh" },
+    LitmusChaos: { provider: "k8s", type: "chaos", resource: "LitmusChaos" },
+
+    // k8s/ecosystem
+    Helm: { provider: "k8s", type: "ecosystem", resource: "Helm" },
+    Kustomize: { provider: "k8s", type: "ecosystem", resource: "Kustomize" },
+    Krew: { provider: "k8s", type: "ecosystem", resource: "Krew" },
+    ExternalDns: { provider: "k8s", type: "ecosystem", resource: "ExternalDns" },
+
+    // k8s/others
+    CustomResourceDefinition: { provider: "k8s", type: "others", resource: "CRD" },
+    PodSecurityPolicy: { provider: "k8s", type: "others", resource: "PSP" },
   };
 
   if (kindMappings[kind]) {
@@ -332,10 +377,10 @@ export interface KubernetesPluginConfig {
   /** Default API version for exports */
   defaultApiVersion?: string;
   /**
-   * Custom resource to icon mappings.
+   * Custom image to icon mappings.
    * Can be either a provider icon mapping, a custom image URL, or an Iconify icon.
    */
-  resourceMappings?: ResourceMappings;
+  imageMappings?: ImageMappings;
 }
 
 /**
@@ -353,10 +398,10 @@ function validateIconifyFormat(key: string, value: string): void {
 /**
  * Validate resource mappings configuration
  */
-function validateResourceMappings(resourceMappings?: ResourceMappings): void {
-  if (!resourceMappings) return;
+function validateImageMappings(imageMappings?: ImageMappings): void {
+  if (!imageMappings) return;
 
-  for (const [key, value] of Object.entries(resourceMappings)) {
+  for (const [key, value] of Object.entries(imageMappings)) {
     if (typeof value === "object" && "iconify" in value) {
       validateIconifyFormat(key, value.iconify);
     }
@@ -391,10 +436,10 @@ let yaml: Yaml | undefined;
  * ```
  *
  * @example
- * // With custom resource mappings
+ * // With custom image mappings
  * const plugin = createKubernetesPlugin({
  *   defaultNamespace: "production",
- *   resourceMappings: {
+ *   imageMappings: {
  *     // Provider icons
  *     "my-custom-deployment": { provider: "k8s", type: "compute", resource: "Deploy" },
  *     // Custom URL
@@ -408,7 +453,7 @@ let yaml: Yaml | undefined;
  */
 export function createKubernetesPlugin(config?: KubernetesPluginConfig): DiagramsPlugin {
   // Validate configuration on creation
-  validateResourceMappings(config?.resourceMappings);
+  validateImageMappings(config?.imageMappings);
 
   return {
     name: "kubernetes",
@@ -465,7 +510,7 @@ export function createKubernetesPlugin(config?: KubernetesPluginConfig): Diagram
             const resources = parseK8sManifest(src);
 
             // Convert Kubernetes resources to diagrams-js JSON format
-            const json = k8sToJSON(resources, config?.resourceMappings);
+            const json = k8sToJSON(resources, config?.imageMappings);
 
             // Use the built-in JSON importer to merge the JSON into the target diagram
             await diagram.import(JSON.stringify(json), "json");
@@ -623,7 +668,7 @@ function parseK8sManifest(yamlContent: string): K8sResource[] {
 /**
  * Convert Kubernetes resources to diagrams-js JSON format
  */
-function k8sToJSON(resources: K8sResource[], resourceMappings: ResourceMappings = {}): DiagramJSON {
+function k8sToJSON(resources: K8sResource[], imageMappings: ImageMappings = {}): DiagramJSON {
   const nodes: DiagramNodeJSON[] = [];
   const edges: DiagramEdgeJSON[] = [];
   const clusterNodes: string[] = [];
@@ -637,7 +682,7 @@ function k8sToJSON(resources: K8sResource[], resourceMappings: ResourceMappings 
     const namespace = resource.metadata.namespace || "default";
     const nodeId = namespace === "default" ? name : `${namespace}/${name}`;
 
-    const providerInfo = getProviderForKind(kind, resourceMappings, name);
+    const providerInfo = getProviderForKind(kind, imageMappings, name);
 
     const node: DiagramNodeJSON = {
       id: nodeId,
@@ -716,6 +761,8 @@ function k8sToJSON(resources: K8sResource[], resourceMappings: ResourceMappings 
           }
 
           nodes.push(podNode);
+          clusterNodes.push(podNodeId);
+          namespaceGroups.get(namespace)!.push(podNodeId);
           edges.push({
             from: nodeId,
             to: podNodeId,
@@ -731,20 +778,37 @@ function k8sToJSON(resources: K8sResource[], resourceMappings: ResourceMappings 
       if (spec.selector) {
         // Find matching deployments/pods
         for (const otherResource of resources) {
+          // Get labels from different locations depending on resource type
+          let labels: Record<string, string> | undefined;
+
           if (
-            (otherResource.kind === "Deployment" || otherResource.kind === "Pod") &&
-            otherResource.metadata.labels
+            otherResource.kind === "Deployment" ||
+            otherResource.kind === "StatefulSet" ||
+            otherResource.kind === "DaemonSet" ||
+            otherResource.kind === "ReplicaSet" ||
+            otherResource.kind === "Job"
           ) {
-            const labels = otherResource.metadata.labels;
+            // For workloads, check both spec.selector.matchLabels and spec.template.metadata.labels
+            const workloadSpec = otherResource.spec as K8sDeploymentSpec | undefined;
+            labels =
+              workloadSpec?.selector?.matchLabels || workloadSpec?.template?.metadata?.labels;
+          } else if (otherResource.kind === "Pod") {
+            // For pods, labels can be in metadata.labels
+            labels = otherResource.metadata.labels;
+          }
+
+          if (labels) {
             const matches = Object.entries(spec.selector).every(
-              ([key, value]) => labels[key] === value,
+              ([key, value]) => labels?.[key] === value,
             );
 
             if (matches) {
+              // Calculate target ID using the same logic as node creation
+              const targetNamespace = otherResource.metadata.namespace || "default";
               const targetId =
-                otherResource.metadata.namespace === namespace || !otherResource.metadata.namespace
+                targetNamespace === "default"
                   ? otherResource.metadata.name
-                  : `${otherResource.metadata.namespace}/${otherResource.metadata.name}`;
+                  : `${targetNamespace}/${otherResource.metadata.name}`;
               edges.push({
                 from: nodeId,
                 to: targetId,
@@ -765,10 +829,12 @@ function k8sToJSON(resources: K8sResource[], resourceMappings: ResourceMappings 
           const volumes = spec.template?.spec?.volumes || [];
           for (const vol of volumes) {
             if (vol.persistentVolumeClaim?.claimName === name || vol.name === name) {
+              // Calculate target ID using the same logic as node creation
+              const targetNamespace = otherResource.metadata.namespace || "default";
               const targetId =
-                otherResource.metadata.namespace === namespace || !otherResource.metadata.namespace
+                targetNamespace === "default"
                   ? otherResource.metadata.name
-                  : `${otherResource.metadata.namespace}/${otherResource.metadata.name}`;
+                  : `${targetNamespace}/${otherResource.metadata.name}`;
               edges.push({
                 from: targetId,
                 to: nodeId,
