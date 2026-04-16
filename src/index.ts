@@ -135,6 +135,15 @@ type ResourceMappingResult =
   | { url: string; provider?: undefined; type?: undefined; resource?: undefined };
 
 /**
+ * Resource info from findResource
+ */
+interface ResourceInfo {
+  provider: string;
+  type: string;
+  resource: string;
+}
+
+/**
  * Resource mapping types for Kubernetes plugin
  */
 export type ResourceMappings = Record<
@@ -150,8 +159,24 @@ export type ResourceMappings = Record<
  */
 const resourceCache = new Map<string, ResourceMappingResult>();
 
+let findResource: (query: string) => ResourceInfo[];
+
 /**
- * Maps Kubernetes container images to provider node types
+ * Common Docker image name mappings to resource names
+ * These are Docker images that don't directly match their resource names
+ */
+const DOCKER_IMAGE_ALIASES: Record<string, string> = {
+  node: "Nodejs",
+  golang: "Go",
+  "c-sharp": "Dotnet",
+  "c#": "Dotnet",
+  postgres: "Postgresql",
+  mongo: "Mongodb",
+  httpd: "Apache",
+};
+
+/**
+ * Maps Kubernetes container images to provider node types using findResource
  */
 function getProviderForImage(image: string): ResourceMappingResult {
   if (!image || image.trim() === "") {
@@ -170,46 +195,43 @@ function getProviderForImage(image: string): ResourceMappingResult {
     return resourceCache.get(imageName)!;
   }
 
-  // Map common images to resources
-  const imageMappings: Record<string, string> = {
-    nginx: "Nginx",
-    postgres: "Postgresql",
-    mysql: "Mysql",
-    mongo: "Mongodb",
-    redis: "Redis",
-    memcached: "Memcached",
-    elasticsearch: "Elasticsearch",
-    kafka: "Kafka",
-    rabbitmq: "Rabbitmq",
-    cassandra: "Cassandra",
-    mariadb: "Mariadb",
-    cockroachdb: "Cockroachdb",
-    cockroach: "Cockroachdb",
-    influxdb: "Influxdb",
-    prometheus: "Prometheus",
-    grafana: "Grafana",
-    jaeger: "Jaeger",
-    vault: "Vault",
-    consul: "Consul",
-    etcd: "Etcd",
-    zookeeper: "Zookeeper",
-    node: "Nodejs",
-    golang: "Go",
-    python: "Python",
-    java: "Java",
-    rust: "Rust",
-  };
+  // Check for Docker image aliases first
+  // e.g., "node" -> search for "Nodejs" instead
+  const searchTerm = DOCKER_IMAGE_ALIASES[imageName] || imageName;
 
-  const searchTerm = imageMappings[imageName];
+  // Search for matching resources using findResource from context
+  // This dynamically discovers provider icons from all available resources
+  if (findResource) {
+    const matches = findResource(searchTerm);
 
-  if (searchTerm) {
-    const result = {
-      provider: "onprem",
-      type: "database",
-      resource: searchTerm,
-    };
-    resourceCache.set(imageName, result);
-    return result;
+    // If we found matches, use the best one (exact match is first due to sorting)
+    if (matches.length > 0) {
+      const bestMatch = matches[0];
+      const result = {
+        provider: bestMatch.provider,
+        type: bestMatch.type,
+        resource: bestMatch.resource,
+      };
+      resourceCache.set(imageName, result);
+      return result;
+    }
+
+    // Fallback: try searching with common suffixes removed
+    // e.g., "postgresql" -> "postgres"
+    const baseName = imageName.replace(/db$/, "").replace(/sql$/, "");
+    if (baseName !== imageName) {
+      const baseMatches = findResource(baseName);
+      if (baseMatches.length > 0) {
+        const bestMatch = baseMatches[0];
+        const result = {
+          provider: bestMatch.provider,
+          type: bestMatch.type,
+          resource: bestMatch.resource,
+        };
+        resourceCache.set(imageName, result);
+        return result;
+      }
+    }
   }
 
   // Default to generic container
@@ -399,9 +421,15 @@ export function createKubernetesPlugin(config?: KubernetesPluginConfig): Diagram
       bun: true,
     },
     initialize: async (_config, context) => {
-      const yamlModule = await context.loadYaml();
+      const [yamlModule, resourcesList] = await Promise.all([
+        context.loadYaml(),
+        context.loadResourcesList(),
+      ]);
       if (yamlModule) {
         yaml = yamlModule;
+      }
+      if (resourcesList?.findResource) {
+        findResource = resourcesList.findResource;
       }
     },
     capabilities: [
