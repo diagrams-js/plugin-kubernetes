@@ -1,0 +1,67 @@
+{
+  "name": "@diagrams-js/plugin-kubernetes",
+  "version": "0.1.0",
+  "description": "Kubernetes import/export plugin for diagrams-js",
+  "keywords": [
+    "architecture",
+    "diagrams",
+    "diagrams-as-code",
+    "diagrams-js",
+    "k8s",
+    "kubernetes",
+    "plugin"
+  ],
+  "homepage": "https://diagrams-js.hatemhosny.dev/",
+  "bugs": {
+    "url": "https://github.com/diagrams-js/plugin-kubernetes/issues"
+  },
+  "license": "MIT",
+  "author": "diagrams-js",
+  "repository": {
+    "url": "https://github.com/diagrams-js/plugin-kubernetes"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack src/index.ts && vp check --fix",
+    "dev": "vp build --watch",
+    "test": "vp test",
+    "check": "vp check",
+    "fix": "vp check --fix",
+    "prepublishOnly": "vp run build",
+    "prepare": "vp config",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
+  },
+  "devDependencies": {
+    "@tanstack/intent": "^0.0.29",
+    "@types/node": "^25.5.0",
+    "diagrams-js": "^0.3.0",
+    "typescript": "^6.0.2",
+    "vite-plus": "^0.1.14",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "diagrams-js": "^0.3.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "overrides": {
+      "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+      "vitest": "npm:@voidzero-dev/vite-plus-test@latest",
+      "diagrams-js": "file:../diagrams-js"
+    }
+  }
+}
