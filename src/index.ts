@@ -530,15 +530,10 @@ export function createKubernetesPlugin(config?: KubernetesPluginConfig): Diagram
           // Group resources by namespace for cleaner output
           const resources: K8sResource[] = [];
 
-          // Track services and their selectors for connecting to deployments
-          const services: { name: string; selector: Record<string, string> }[] = [];
-          const deployments: { name: string; labels: Record<string, string> }[] = [];
-
           // Process nodes to create resources
           for (const node of diagramJson.nodes) {
             const metadata = node.metadata?.kubernetes || {};
             const kind = metadata.kind || "Deployment";
-            const namespace = metadata.namespace || config?.defaultNamespace || "default";
             const name = (node.label || "unnamed").toLowerCase().replace(/\s+/g, "-");
 
             // Skip non-Kubernetes nodes (those without kubernetes metadata)
@@ -546,65 +541,39 @@ export function createKubernetesPlugin(config?: KubernetesPluginConfig): Diagram
               continue;
             }
 
+            // Skip Pod nodes that were created for replica visualization (they have parentKind)
+            if (kind === "Pod" && metadata.parentKind) {
+              continue;
+            }
+
+            const namespace = metadata.namespace || config?.defaultNamespace || "default";
+
+            // Build metadata - only include labels/annotations if they exist
+            const resourceMetadata: K8sMetadata = { name, namespace };
+            if (metadata.labels && Object.keys(metadata.labels).length > 0) {
+              resourceMetadata.labels = metadata.labels;
+            }
+            if (metadata.annotations && Object.keys(metadata.annotations).length > 0) {
+              resourceMetadata.annotations = metadata.annotations;
+            }
+
             const resource: K8sResource = {
               apiVersion: metadata.apiVersion || getDefaultApiVersion(kind),
               kind,
-              metadata: {
-                name,
-                namespace,
-                labels: metadata.labels || {},
-                annotations: metadata.annotations || {},
-              },
+              metadata: resourceMetadata,
             };
 
-            // Add spec based on kind
-            if (kind === "Deployment") {
-              const spec = metadata.spec || {};
-              resource.spec = {
-                replicas: spec.replicas || 1,
-                selector: {
-                  matchLabels: { app: name },
-                },
-                template: {
-                  metadata: { labels: { app: name } },
-                  spec: {
-                    containers: spec.containers || [
-                      {
-                        name: name,
-                        image: metadata.image || "nginx:latest",
-                        ports: [{ containerPort: 80 }],
-                      },
-                    ],
-                  },
-                },
-              };
-              deployments.push({ name, labels: { app: name } });
-            } else if (kind === "Service") {
-              const spec = metadata.spec || {};
-              resource.spec = {
-                selector: spec.selector || {},
-                ports: spec.ports || [{ port: 80 }],
-                type: spec.type || "ClusterIP",
-              };
-              services.push({ name, selector: spec.selector || {} });
+            // Use the original spec directly if available
+            if (metadata.spec) {
+              resource.spec = metadata.spec;
             } else if (kind === "ConfigMap" || kind === "Secret") {
-              resource.data = metadata.data || {};
+              // For ConfigMap/Secret, data might be stored directly
+              if (metadata.data) {
+                resource.data = metadata.data;
+              }
               if (kind === "Secret" && metadata.stringData) {
                 resource.stringData = metadata.stringData;
               }
-            } else if (kind === "PersistentVolumeClaim") {
-              const spec = metadata.spec || {};
-              resource.spec = {
-                accessModes: spec.accessModes || ["ReadWriteOnce"],
-                resources: {
-                  requests: {
-                    storage: spec.resources?.requests?.storage || "1Gi",
-                  },
-                },
-              };
-            } else {
-              // Generic spec for other resource types
-              resource.spec = metadata.spec || {};
             }
 
             resources.push(resource);
@@ -744,6 +713,7 @@ function k8sToJSON(resources: K8sResource[], imageMappings: ImageMappings = {}):
                 kind: "Pod",
                 parentKind: kind,
                 parentName: name,
+                namespace,
                 image: firstContainer.image,
                 ports: firstContainer.ports,
                 env: firstContainer.env,

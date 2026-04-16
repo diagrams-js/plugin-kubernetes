@@ -1347,4 +1347,609 @@ spec:
       expect(serviceToDeploymentEdge).toBeDefined();
     });
   });
+
+  describe("Round-trip", () => {
+    it("should preserve all resource fields in round-trip", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: production
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+      - name: api
+        image: node:18
+        ports:
+        - containerPort: 3000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: production
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15`;
+
+      await diagram.import(originalYaml, "kubernetes");
+
+      // Export and verify
+      const exported = await diagram.export("kubernetes");
+
+      // Should not contain Pod resources (they're visual elements only)
+      expect(exported).not.toContain("kind: Pod");
+
+      // Should preserve original images
+      expect(exported).toContain("image: nginx:alpine");
+      expect(exported).toContain("image: node:18");
+      expect(exported).toContain("image: postgres:15");
+
+      // Should preserve container ports
+      expect(exported).toContain("containerPort: 80");
+      expect(exported).toContain("containerPort: 3000");
+
+      // Should preserve namespace
+      expect(exported).toContain("namespace: production");
+
+      // Should preserve replicas
+      expect(exported).toContain("replicas: 3");
+      expect(exported).toContain("replicas: 2");
+      expect(exported).toContain("replicas: 1");
+
+      // Should not add empty labels or annotations
+      expect(exported).not.toContain("labels: {}");
+      expect(exported).not.toContain("annotations: {}");
+
+      // Should not add default service type
+      expect(exported).not.toContain("type: ClusterIP");
+    });
+
+    it("should not export replica Pod nodes as resources", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const k8sYaml = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+      - name: web
+        image: nginx:latest`;
+
+      await diagram.import(k8sYaml, "kubernetes");
+
+      const json = diagram.toJSON();
+      // Should have 4 nodes: 1 Deployment + 3 Pod replicas
+      expect(json.nodes).toHaveLength(4);
+
+      const exported = await diagram.export("kubernetes");
+
+      // Should only contain the Deployment, not the Pod replicas
+      expect(exported).toContain("kind: Deployment");
+      expect(exported).not.toContain("kind: Pod");
+    });
+
+    it("should preserve complete Deployment spec with all fields", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: production
+  labels:
+    app: web
+    version: v1
+    environment: prod
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: Main web application
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        version: v1
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+          protocol: TCP
+          name: http
+        - containerPort: 443
+          protocol: TCP
+          name: https
+        env:
+        - name: NGINX_HOST
+          value: example.com
+        - name: NGINX_PORT
+          value: "80"
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+        - name: cache
+          mountPath: /var/cache/nginx
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
+      - name: cache
+        emptyDir: {}`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const deployment = json.nodes.find((n) => n.id === "production/web-app");
+
+      expect(deployment).toBeDefined();
+      expect(deployment?.metadata?.kubernetes?.kind).toBe("Deployment");
+      expect(deployment?.metadata?.kubernetes?.namespace).toBe("production");
+      expect(deployment?.metadata?.kubernetes?.labels).toEqual({
+        app: "web",
+        version: "v1",
+        environment: "prod",
+      });
+      expect(deployment?.metadata?.kubernetes?.annotations).toEqual({
+        "deployment.kubernetes.io/revision": "1",
+        description: "Main web application",
+      });
+
+      const spec = deployment?.metadata?.kubernetes?.spec;
+      expect(spec?.replicas).toBe(5);
+      expect(spec?.strategy?.type).toBe("RollingUpdate");
+      expect(spec?.strategy?.rollingUpdate?.maxSurge).toBe(2);
+      expect(spec?.selector?.matchLabels?.app).toBe("web");
+
+      // Check containers
+      const container = spec?.template?.spec?.containers?.[0];
+      expect(container?.name).toBe("nginx");
+      expect(container?.image).toBe("nginx:1.25-alpine");
+      expect(container?.ports).toHaveLength(2);
+      expect(container?.env).toHaveLength(2);
+      expect(container?.resources?.limits?.cpu).toBe("500m");
+      expect(container?.livenessProbe?.httpGet?.path).toBe("/health");
+      expect(container?.volumeMounts).toHaveLength(2);
+
+      // Check volumes
+      expect(spec?.template?.spec?.volumes).toHaveLength(2);
+    });
+
+    it("should preserve Service spec with all fields", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: default
+  labels:
+    app: api
+    tier: backend
+spec:
+  type: LoadBalancer
+  selector:
+    app: api
+    tier: backend
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
+    name: https
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const service = json.nodes.find((n) => n.id === "api-service");
+
+      expect(service).toBeDefined();
+      const spec = service?.metadata?.kubernetes?.spec;
+      expect(spec?.type).toBe("LoadBalancer");
+      expect(spec?.selector?.app).toBe("api");
+      expect(spec?.selector?.tier).toBe("backend");
+      expect(spec?.ports).toHaveLength(2);
+      expect(spec?.ports?.[0]?.port).toBe(80);
+      expect(spec?.ports?.[0]?.targetPort).toBe(8080);
+      expect(spec?.ports?.[1]?.name).toBe("https");
+      expect(spec?.sessionAffinity).toBe("ClientIP");
+    });
+
+    it("should preserve StatefulSet spec with volumeClaimTemplates", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  serviceName: postgres
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const sts = json.nodes.find((n) => n.id === "database/postgres");
+
+      expect(sts).toBeDefined();
+      expect(sts?.metadata?.kubernetes?.kind).toBe("StatefulSet");
+      const spec = sts?.metadata?.kubernetes?.spec;
+      expect(spec?.serviceName).toBe("postgres");
+      expect(spec?.replicas).toBe(3);
+      expect(spec?.volumeClaimTemplates).toHaveLength(1);
+      expect(spec?.volumeClaimTemplates?.[0]?.metadata?.name).toBe("data");
+      expect(spec?.volumeClaimTemplates?.[0]?.spec?.storageClassName).toBe("fast-ssd");
+    });
+
+    it("should preserve ConfigMap and Secret data", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  database.properties: |
+    host=localhost
+    port=5432
+  app.conf: "log_level=debug"
+  max_connections: "100"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: default
+type: Opaque
+data:
+  password: c2VjcmV0MTIz
+stringData:
+  api_key: my-secret-key
+  database_url: postgres://user:pass@host/db`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const cm = json.nodes.find((n) => n.id === "app-config");
+      const secret = json.nodes.find((n) => n.id === "app-secrets");
+
+      expect(cm?.metadata?.kubernetes?.data?.["database.properties"]).toContain("host=localhost");
+      expect(cm?.metadata?.kubernetes?.data?.max_connections).toBe("100");
+
+      expect(secret?.metadata?.kubernetes?.data?.password).toBe("c2VjcmV0MTIz");
+      expect(secret?.metadata?.kubernetes?.stringData?.api_key).toBe("my-secret-key");
+    });
+
+    it("should preserve Ingress configuration", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - example.com
+    secretName: example-tls
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8080`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const ingress = json.nodes.find((n) => n.id === "app-ingress");
+
+      expect(ingress).toBeDefined();
+      expect(ingress?.metadata?.kubernetes?.kind).toBe("Ingress");
+      const spec = ingress?.metadata?.kubernetes?.spec;
+      expect(spec?.ingressClassName).toBe("nginx");
+      expect(spec?.tls?.[0]?.hosts?.[0]).toBe("example.com");
+      expect(spec?.rules?.[0]?.http?.paths).toHaveLength(2);
+    });
+
+    it("should preserve DaemonSet and Job specs", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    spec:
+      containers:
+      - name: node-exporter
+        image: prom/node-exporter:v1.6
+        ports:
+        - containerPort: 9100
+          hostPort: 9100
+      hostNetwork: true
+      hostPID: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-migration
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrator
+        image: migrate/migrate:v4`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const ds = json.nodes.find((n) => n.id === "monitoring/node-exporter");
+      const job = json.nodes.find((n) => n.id === "data-migration");
+
+      expect(ds?.metadata?.kubernetes?.kind).toBe("DaemonSet");
+      expect(ds?.metadata?.kubernetes?.spec?.template?.spec?.hostNetwork).toBe(true);
+
+      expect(job?.metadata?.kubernetes?.kind).toBe("Job");
+      expect(job?.metadata?.kubernetes?.spec?.ttlSecondsAfterFinished).toBe(3600);
+      expect(job?.metadata?.kubernetes?.spec?.backoffLimit).toBe(3);
+    });
+
+    it("should preserve resources without adding empty fields", async () => {
+      const diagram = Diagram("Test");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx:latest`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify no empty fields added
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const pod = json.nodes.find((n) => n.id === "simple-pod");
+
+      expect(pod).toBeDefined();
+      // Should not have empty labels or annotations
+      expect(pod?.metadata?.kubernetes?.labels).toBeUndefined();
+      expect(pod?.metadata?.kubernetes?.annotations).toBeUndefined();
+    });
+
+    it("should handle resources from multiple namespaces", async () => {
+      const diagram = Diagram("Multi-namespace");
+      await diagram.registerPlugins([kubernetesPlugin]);
+
+      const originalYaml = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: production
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  namespace: staging
+spec:
+  ports:
+  - port: 80`;
+
+      await diagram.import(originalYaml, "kubernetes");
+      const exported = await diagram.export("kubernetes");
+
+      // Import the exported YAML and verify namespaces preserved
+      const diagram2 = Diagram("Test2");
+      await diagram2.registerPlugins([kubernetesPlugin]);
+      await diagram2.import(exported as string, "kubernetes");
+
+      const json = diagram2.toJSON();
+      const deployment = json.nodes.find((n) => n.id === "production/frontend");
+      const service = json.nodes.find((n) => n.id === "staging/frontend-svc");
+
+      expect(deployment?.metadata?.kubernetes?.namespace).toBe("production");
+      expect(service?.metadata?.kubernetes?.namespace).toBe("staging");
+    });
+  });
 });
