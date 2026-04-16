@@ -1,0 +1,17 @@
+{
+  "title": "Docker Compose Example",
+  "activeEditor": "script",
+  "markup": {
+    "language": "html",
+    "content": "<div id=\"diagram\"></div>"
+  },
+  "script": {
+    "language": "javascript",
+    "content": "import { Diagram } from 'diagrams-js';\nimport { kubernetesPlugin } from '@diagrams-js/plugin-kubernetes';\n\nconst diagram = Diagram('My K8s Application');\n\n// Register the plugin instance\nawait diagram.registerPlugins([kubernetesPlugin]);\n\n// Import from Kubernetes YAML\nconst k8sYaml = `\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-deployment\n  namespace: default\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: web\n  template:\n    spec:\n      containers:\n      - name: web\n        image: nginx:latest\n        ports:\n        - containerPort: 80\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: web-service\n  namespace: default\nspec:\n  selector:\n    app: web\n  ports:\n  - port: 80\n    targetPort: 80\n`;\n\nawait diagram.import(k8sYaml, 'kubernetes');\n\n// Render the diagram\nconst svg = await diagram.render();\n\ndocument.getElementById('diagram').innerHTML = svg;\n\n//await diagram.save('grouped-workers-on-aws.svg');\n"
+  },
+  "customSettings": {
+    "imports": {
+      "@diagrams-js/plugin-kubernetes": "{{LC::TO_DATA_URL(./dist/index.js)}}"
+    }
+  }
+}

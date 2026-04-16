@@ -7,15 +7,10 @@ settings:
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vitest: npm:@voidzero-dev/vite-plus-test@latest
-  diagrams-js: file:../diagrams-js
 
 importers:
 
   .:
-    dependencies:
-      diagrams-js:
-        specifier: file:../diagrams-js
-        version: file:../diagrams-js
     devDependencies:
       '@tanstack/intent':
         specifier: ^0.0.29
@@ -23,6 +18,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.6.0
+      diagrams-js:
+        specifier: ^0.3.1
+        version: 0.3.1
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -762,8 +760,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  diagrams-js@file:../diagrams-js:
-    resolution: {directory: ../diagrams-js, type: directory}
+  diagrams-js@0.3.1:
+    resolution: {integrity: sha512-7MrGlvUzK4rT4Keo3Cb9X8D0K9fWOHpJv9xcI60XxlERGbCFW91BqPHTVTmXbBtZB2MT3HTNoZrmIxlgXELzTQ==}
 
   es-module-lexer@1.7.0:
     resolution: {integrity: sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA==}
@@ -1446,7 +1444,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  diagrams-js@file:../diagrams-js:
+  diagrams-js@0.3.1:
     optionalDependencies:
       sharp: 0.34.5
 

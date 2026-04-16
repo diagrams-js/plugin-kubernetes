@@ -1,0 +1,191 @@
+name: Release
+
+run-name: Release ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version bump type (major, minor, patch)"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.4.1"
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+          cache-dependency-path: ./pnpm-lock.yaml
+
+      - name: Install Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24.4.1"
+          cache: true
+
+      - name: Install dependencies
+        run: vp install
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump version
+        run: |
+          npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "RELEASE_BRANCH=release/v$NEW_VERSION" >> $GITHUB_ENV
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            # No previous tag, get all commits
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            # Get commits since last tag
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Create changelog entry
+          echo "## [${{ env.NEW_VERSION }}] - $(date +%Y-%m-%d)" > CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          # Categorize commits
+          echo "### Features" >> CHANGELOG_NEW.md
+          echo "$COMMITS" | grep -i "^\- feat" >> CHANGELOG_NEW.md || echo "- No new features" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          echo "### Bug Fixes" >> CHANGELOG_NEW.md
+          echo "$COMMITS" | grep -i "^\- fix" >> CHANGELOG_NEW.md || echo "- No bug fixes" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          echo "### Other Changes" >> CHANGELOG_NEW.md
+          echo "$COMMITS" | grep -iv "^\- feat\|^\- fix\|^\- chore(release)" >> CHANGELOG_NEW.md || echo "- No other changes" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          # Prepend to existing CHANGELOG.md or create new one
+          if [ -f ./CHANGELOG.md ]; then
+            cat CHANGELOG_NEW.md ./CHANGELOG.md > CHANGELOG_TEMP.md
+            mv CHANGELOG_TEMP.md ./CHANGELOG.md
+          else
+            cat CHANGELOG_NEW.md > ./CHANGELOG.md
+          fi
+
+          rm CHANGELOG_NEW.md
+
+          # Set output for release notes
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat ./CHANGELOG.md | head -50 >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build library
+        run: vp run build
+
+      - name: Create release archives
+        run: |
+          # Create archives in /tmp to avoid committing them
+          cd dist
+          zip -r /tmp/plugin-kubernetes-v${{ env.NEW_VERSION }}.zip .
+          cd ..
+          tar -czf /tmp/plugin-kubernetes-v${{ env.NEW_VERSION }}.tar.gz -C dist .
+
+      - name: Create release branch and commit
+        run: |
+          # Create and checkout release branch
+          git checkout -b ${{ env.RELEASE_BRANCH }}
+
+          # Add and commit version bump and changelog
+          vp check --fix
+          git add package.json
+          git add ./CHANGELOG.md
+          git commit -m "chore(release): bump version to ${{ env.NEW_VERSION }}"
+
+          # Push release branch
+          git push origin ${{ env.RELEASE_BRANCH }}
+
+      - name: Create and push tag
+        run: |
+          # Create and push tag from the release branch
+          git tag -a "v${{ env.NEW_VERSION }}" -m "Release v${{ env.NEW_VERSION }}"
+          git push origin "v${{ env.NEW_VERSION }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.NEW_VERSION }}
+          name: Release v${{ env.NEW_VERSION }}
+          body: ${{ steps.changelog.outputs.notes }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            /tmp/plugin-kubernetes-v${{ env.NEW_VERSION }}.zip
+            /tmp/plugin-kubernetes-v${{ env.NEW_VERSION }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Create Pull Request
+        run: |
+          gh pr create \
+            --base main \
+            --head ${{ env.RELEASE_BRANCH }} \
+            --title "chore(release): bump version to ${{ env.NEW_VERSION }}" \
+            --body "## Version Bump
+
+          This PR bumps the version to **${{ env.NEW_VERSION }}**.
+
+          ### npm Package
+          📦 [@diagrams-js/plugin-kubernetes](https://www.npmjs.com/package/@diagrams-js/plugin-kubernetes)
+
+          ### Changes
+          - Updated package.json version
+          - Updated CHANGELOG.md
+
+          ### Changelog
+
+          ${{ steps.changelog.outputs.notes }}"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      # Publish using OIDC token (configured as trusted publisher on npm)
+      # See: https://docs.npmjs.com/trusted-publishers
+      - name: Publish to npm
+        run: |
+          npm install -g npm@11.6.4
+          npm publish --provenance
