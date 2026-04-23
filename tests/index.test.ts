@@ -389,7 +389,7 @@ spec:
       const json = diagram.toJSON();
       const customNode = json.nodes.find((n) => n.id === "my-custom-app");
       expect(customNode).toBeDefined();
-      expect(customNode?.type).toBe("Server");
+      expect(customNode?.resource).toBe("Server");
       expect(customNode?.provider).toBe("onprem");
     });
 

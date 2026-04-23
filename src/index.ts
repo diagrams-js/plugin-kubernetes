@@ -676,8 +676,8 @@ function k8sToJSON(resources: K8sResource[], imageMappings: ImageMappings = {}):
       node.iconUrl = providerInfo.url;
     } else {
       node.provider = providerInfo.provider;
-      node.service = providerInfo.type;
-      node.type = providerInfo.resource;
+      node.type = providerInfo.type;
+      node.resource = providerInfo.resource;
     }
 
     nodes.push(node);
@@ -726,8 +726,8 @@ function k8sToJSON(resources: K8sResource[], imageMappings: ImageMappings = {}):
             podNode.iconUrl = containerProvider.url;
           } else {
             podNode.provider = containerProvider.provider;
-            podNode.service = containerProvider.type;
-            podNode.type = containerProvider.resource;
+            podNode.type = containerProvider.type;
+            podNode.resource = containerProvider.resource;
           }
 
           nodes.push(podNode);

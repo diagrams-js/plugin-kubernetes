@@ -19,8 +19,8 @@ importers:
         specifier: ^25.5.0
         version: 25.6.0
       diagrams-js:
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.5.0
+        version: 0.5.0
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -35,9 +35,6 @@ packages:
 
   '@emnapi/core@1.9.2':
     resolution: {integrity: sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA==}
-
-  '@emnapi/runtime@1.10.0':
-    resolution: {integrity: sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==}
 
   '@emnapi/runtime@1.9.2':
     resolution: {integrity: sha512-3U4+MIWHImeyu1wnmVygh5WlgfYDtyf0k8AbLhMFxOipihf6nrWC4syIm/SwEeec0mNSafiiNnMJwbza/Is6Lw==}
@@ -760,8 +757,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  diagrams-js@0.3.1:
-    resolution: {integrity: sha512-7MrGlvUzK4rT4Keo3Cb9X8D0K9fWOHpJv9xcI60XxlERGbCFW91BqPHTVTmXbBtZB2MT3HTNoZrmIxlgXELzTQ==}
+  diagrams-js@0.5.0:
+    resolution: {integrity: sha512-cPN3cUS6slcvS+UmqTIUqFGxHMDpO1efaGBWwHM97dYxFxG5OUyr/Bqp4Wa3zcJ3KFICCmxRGxv5QbJ65LmswA==}
 
   es-module-lexer@1.7.0:
     resolution: {integrity: sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA==}
@@ -1032,11 +1029,6 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@1.10.0':
-    dependencies:
-      tslib: 2.8.1
-    optional: true
-
   '@emnapi/runtime@1.9.2':
     dependencies:
       tslib: 2.8.1
@@ -1132,7 +1124,7 @@ snapshots:
 
   '@img/sharp-wasm32@0.34.5':
     dependencies:
-      '@emnapi/runtime': 1.10.0
+      '@emnapi/runtime': 1.9.2
     optional: true
 
   '@img/sharp-win32-arm64@0.34.5':
@@ -1444,7 +1436,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  diagrams-js@0.3.1:
+  diagrams-js@0.5.0:
     optionalDependencies:
       sharp: 0.34.5
 
