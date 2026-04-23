@@ -1,6 +1,6 @@
 {
   "name": "@diagrams-js/plugin-kubernetes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Kubernetes import/export plugin for diagrams-js",
   "keywords": [
     "architecture",
