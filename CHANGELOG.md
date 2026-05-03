@@ -1,3 +1,17 @@
+## [0.3.0] - 2026-05-03
+
+### Features
+
+- No new features
+
+### Bug Fixes
+
+- No bug fixes
+
+### Other Changes
+
+- update diagrams-js (1e39ab6)
+
 ## [0.2.0] - 2026-04-23
 
 ### Features
